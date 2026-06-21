@@ -365,7 +365,7 @@ Module.register("MMM-PlaceInfo", {
     });
   },
 
-  requestWeather: function (placeIdx, place) {
+  requestWeather: async function (placeIdx, place) {
     var url =
       this.config.weatherAPI +
       this.config.weatherAPIVersion +
@@ -374,27 +374,28 @@ Module.register("MMM-PlaceInfo", {
       this.getWeatherParams(place);
     var self = this;
     console.log(this.name + ": weather request(" + url + ")");
-    var weatherRequest = new XMLHttpRequest();
-    weatherRequest.open("GET", url, true);
-    weatherRequest.onreadystatechange = function () {
-      if (this.readyState !== 4) {
-        return;
-      }
-      if (this.status === 200) {
-        self.processWeather(placeIdx, JSON.parse(this.response));
-      } else if (this.status === 401) {
+    try {
+      var response = await fetch(url);
+      if (response.status === 200) {
+        var data = await response.json();
+        self.processWeather(placeIdx, data);
+      } else if (response.status === 401) {
         Log.error(self.name + ": Incorrect API Key for weather.");
         self.state.wstatus = "failed (bad API key)";
         self.state.weather.badKey = true;
         self.updateDom(self.config.animationSpeed);
       } else {
-        Log.error(self.name + ": Could not load weather: " + this.status);
-        self.state.wstatus = "failed (HTTP " + this.status + ")";
+        Log.error(self.name + ": Could not load weather: " + response.status);
+        self.state.wstatus = "failed (HTTP " + response.status + ")";
         self.state.weather.shouldRetry = true;
       }
+    } catch (error) {
+      Log.error(self.name + ": Could not load weather: " + error);
+      self.state.wstatus = "failed (network error)";
+      self.state.weather.shouldRetry = true;
+    } finally {
       self.onWeatherComplete();
-    };
-    weatherRequest.send();
+    }
   },
 
   onWeatherComplete: function () {
@@ -433,7 +434,7 @@ Module.register("MMM-PlaceInfo", {
     this.updateDom(this.config.animationSpeed);
   },
 
-  updateCurrencies: function () {
+  updateCurrencies: async function () {
     var url = this.config.currencyAPI;
     var delay = this.config.currencyRetryDelay;
     var params = this.getCurrencyParams();
@@ -444,26 +445,26 @@ Module.register("MMM-PlaceInfo", {
     }
     url += params;
     var self = this;
-    var retry = true;
 
     console.log(this.name + ": currency request(" + url + ")");
-    var Request = new XMLHttpRequest();
-    Request.open("GET", url, true);
-    Request.onreadystatechange = function () {
-      if (this.readyState === 4) {
-        if (this.status === 200) {
-          self.processCurrencies(JSON.parse(this.response));
-        } else {
-          Log.error(self.name + ": Could not load data.");
-          self.state.cstatus = "failed (" + this.status + ")"
-        }
-        self.scheduleUpdate(
-          self.state.currency,
-          self.state.currency.loaded ? -1 : delay
-        );
+    try {
+      var response = await fetch(url);
+      if (response.status === 200) {
+        var data = await response.json();
+        self.processCurrencies(data);
+      } else {
+        Log.error(self.name + ": Could not load data.");
+        self.state.cstatus = "failed (" + response.status + ")";
       }
-    };
-    Request.send();
+    } catch (error) {
+      Log.error(self.name + ": Could not load data: " + error);
+      self.state.cstatus = "failed (network error)";
+    } finally {
+      self.scheduleUpdate(
+        self.state.currency,
+        self.state.currency.loaded ? -1 : delay
+      );
+    }
   },
 
   getCurrencyParams: function () {
